@@ -1,0 +1,115 @@
+/*
+ * ============================================================
+ *  IoT-Based Humidity & Temperature Monitor
+ *  Hardware : NodeMCU ESP8266 + DHT11 Sensor
+ *  Platform : Blynk IoT (blynk.cloud)
+ *  Author   : <Your Name>
+ *  License  : MIT
+ * ============================================================
+ *
+ *  Virtual Pin Mapping
+ *  -------------------
+ *  V0  →  Temperature (°C)     [Gauge / SuperChart]
+ *  V1  →  Humidity    (%)      [Gauge / SuperChart]
+ *  V2  →  Heat-Alert LED       [LED widget]  255 = ON, 0 = OFF
+ *
+ *  Wiring
+ *  ------
+ *  DHT11 VCC  →  3.3 V (or 5 V)
+ *  DHT11 DATA →  D4 (GPIO2)
+ *  DHT11 GND  →  GND
+ *  (Use a 10 kΩ pull-up resistor between DATA and VCC)
+ * ============================================================
+ */
+
+/* ── Blynk credentials ─────────────────────────────────────── */
+#define BLYNK_TEMPLATE_ID   "Temp id"                          // Replace with your Template ID
+#define BLYNK_TEMPLATE_NAME "IoT Based Humidity Temperature Sensor"
+#define BLYNK_AUTH_TOKEN    "token"                            // Replace with your Auth Token
+
+/* ── Library includes ──────────────────────────────────────── */
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+#include "DHT.h"
+
+/* ── Wi-Fi credentials ─────────────────────────────────────── */
+char ssid[] = "wifi name";   // Replace with your Wi-Fi SSID
+char pass[] = "password";    // Replace with your Wi-Fi password
+
+/* ── DHT sensor configuration ──────────────────────────────── */
+#define DHTPIN  D4            // GPIO2 on NodeMCU
+#define DHTTYPE DHT11         // Change to DHT22 if using that sensor
+
+DHT dht(DHTPIN, DHTTYPE);
+
+/* ── Blynk timer ───────────────────────────────────────────── */
+BlynkTimer timer;
+
+/* ── Temperature threshold for the alert LED (°C) ─────────── */
+#define TEMP_ALERT_THRESHOLD 35.0
+
+/* ─────────────────────────────────────────────────────────────
+ *  sendSensor()
+ *  Reads temperature & humidity from the DHT11 and pushes the
+ *  values to the three Blynk virtual pins.
+ *  Called automatically every 2 seconds by BlynkTimer.
+ * ───────────────────────────────────────────────────────────── */
+void sendSensor()
+{
+  float h = dht.readHumidity();       // Relative humidity in %
+  float t = dht.readTemperature();    // Temperature in °C
+
+  /* Guard against failed reads (NaN) */
+  if (isnan(h) || isnan(t)) {
+    Serial.println("[ERROR] Failed to read from DHT sensor! Check wiring.");
+    return;
+  }
+
+  /* Print to Serial Monitor for debugging */
+  Serial.print("[DHT11] Humidity: ");
+  Serial.print(h);
+  Serial.print(" %   Temperature: ");
+  Serial.print(t);
+  Serial.println(" °C");
+
+  /* Push readings to Blynk dashboard */
+  Blynk.virtualWrite(V0, t);    // Temperature → V0
+  Blynk.virtualWrite(V1, h);    // Humidity    → V1
+
+  /* Trigger the heat-alert LED when temperature exceeds threshold */
+  if (t > TEMP_ALERT_THRESHOLD) {
+    Blynk.virtualWrite(V2, 255);  // LED ON
+    Serial.println("[ALERT] High temperature detected!");
+  } else {
+    Blynk.virtualWrite(V2, 0);   // LED OFF
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+ *  setup()
+ * ───────────────────────────────────────────────────────────── */
+void setup()
+{
+  Serial.begin(9600);
+  Serial.println("\n[BOOT] IoT Temperature & Humidity Monitor starting...");
+
+  dht.begin();
+  Serial.println("[DHT11] Sensor initialized.");
+
+  /* Connect to Wi-Fi and Blynk cloud */
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+  Serial.println("[BLYNK] Connected to Blynk cloud.");
+
+  /* Schedule sendSensor() to run every 2000 ms */
+  timer.setInterval(2000L, sendSensor);
+  Serial.println("[TIMER] Sensor polling every 2 seconds.");
+}
+
+/* ─────────────────────────────────────────────────────────────
+ *  loop()
+ * ───────────────────────────────────────────────────────────── */
+void loop()
+{
+  Blynk.run();   // Maintain Blynk connection & handle incoming data
+  timer.run();   // Fire scheduled callbacks
+}
